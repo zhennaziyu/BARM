@@ -18,8 +18,7 @@ class VPT(nn.Module):
         self.prompt = nn.Parameter(torch.empty(vpt_len, emb_dim, dtype=dtype))
         init_val = math.sqrt(6. / float(3 * reduce(mul, patch_size, 1) + emb_dim))
         nn.init.uniform_(self.prompt, -init_val, init_val)
-        # print('/////////////////')
-
+       
     def forward(self, x):
         x = x[:, :self.seq_len, :]
         prompt = self.prompt.expand(x.shape[0], -1, -1)
@@ -201,9 +200,7 @@ class ViT_Head(nn.Module):
         x = x / x.norm(dim=-1, keepdim=True)
         # print(self.weight.dtype)
         weight = self.weight / self.weight.norm(dim=-1, keepdim=True)
-        # print(x.dtype)
-        # print(weight.dtype)
-        # print('////////')
+        
         return self.logit_scale * (x @ weight.t())
 
 
@@ -831,35 +828,6 @@ class Model(nn.Module):
                 m * self.confusion_matrix[c]
                 + (1 - m) * avg_pred
             )
-        # print(self.confusion_matrix)
-    # @torch.no_grad()
-    # def update_confusion_matrix(self, unlabeled_probs):
-    #     max_probs, pseudo_labels = unlabeled_probs.max(dim=-1)
-
-    #     high_conf_mask = max_probs > 0.95
-    #     if high_conf_mask.sum() == 0:
-    #         return
-
-    #     probs = unlabeled_probs[high_conf_mask]
-    #     labels = pseudo_labels[high_conf_mask]
-
-    #     N, C = probs.shape
-
-    #     one_hot = torch.zeros(
-    #         N, self.class_num,
-    #         device=probs.device,
-    #         dtype=probs.dtype
-    #     )
-    #     one_hot.scatter_(1, labels.unsqueeze(1), 1.0)
-    #     counts = one_hot.sum(dim=0)
-    #     sum_pred = one_hot.T @ probs
-    #     valid = counts > 0
-    #     avg_pred = torch.zeros_like(self.confusion_matrix)
-    #     avg_pred[valid] = sum_pred[valid] / counts[valid].unsqueeze(1)
-    #     self.confusion_matrix[valid] = (
-    #         self.m * self.confusion_matrix[valid]
-    #         + (1 - self.m) * avg_pred[valid]
-    #     )
 
     @torch.no_grad()
     def _compute_weight_norm_delta(self):
@@ -870,41 +838,7 @@ class Model(nn.Module):
 
         return delta
     
-    # torch.no_grad()
-    # def compute_scatter(self, conf_threshold: float = 0.7):
-    #     eps = 1e-6
-    #     queue  = self.queue          
-    #     labels = self.queue_labels   
-    #     logits = self.queue_logits   
-
-    #     logits = torch.softmax(logits, dim=-1)
-    #     max_conf, targets_u = torch.max(logits, dim=-1)     
-    #     valid_mask = (labels >= 0) & (max_conf >= conf_threshold)
-    #     queue  = queue[valid_mask]
-    #     labels = labels[valid_mask]
-
-    #     scatter = torch.full(
-    #         (self.class_num,), fill_value=-1.0, device=queue.device
-    #     )
-    #     for c in range(self.class_num):
-    #         mask_c = (labels == c)
-    #         if mask_c.sum() < 2:
-    #             continue
-    #         feats_c = queue[mask_c]
-    #         proto_c = feats_c.mean(dim=0, keepdim=True)
-    #         scatter[c] = ((feats_c - proto_c) ** 2).sum(dim=-1).mean()
-
-        
-    #     valid_cls = scatter >= 0
-    #     if valid_cls.sum() == 0:
-    #         self.train_step += 1
-    #         return torch.ones(self.class_num, device=queue.device)
-
-    #     scatter[~valid_cls] = scatter[valid_cls].mean()
-    #     scatter_norm = scatter / (scatter.mean() + eps)
-
-    #     self.train_step += 1
-    #     return scatter_norm
+    
     @torch.no_grad()
     def compute_entropy_score(self):
         eps = 1e-6
@@ -958,84 +892,12 @@ class Model(nn.Module):
             scatter[~valid_cls] = mean_scatter
 
         scatter_norm = scatter / (scatter.mean() + eps)
-        # sorted_scatter, sorted_idx = scatter_norm.sort(descending=True)
-        # print(f"scatter top5 类: {sorted_idx[:5].tolist()} → {sorted_scatter[:5].tolist()}")
-        # print(f"scatter bot5 类: {sorted_idx[-5:].tolist()} → {sorted_scatter[-5:].tolist()}")
-
-        # 在 _compute_triple_delta 里加
+        
        
         self.train_step += 1
         return scatter_norm
-       
-        # self.train_step += 1
-        # return scatter_norm
-
-
+          
     
-    
-    # @torch.no_grad()
-    # def _compute_triple_delta(self, alpha=0.01, beta=0.1):
-    #     eps = 1e-6
-    #     mod = self.label_hist / (self.label_hist.mean() + eps)
-
-    #     scatter_norm = self.compute_scatter()
-    #     sem_norm = self.compute_semantic_confusion()
-
-    #     structural = scatter_norm / (sem_norm + eps)
-    #     structural = structural / (structural.mean() + eps)
-    #     structural = structural ** beta
-    #     delta = self.time_p * mod * structural
-    #     return delta
-    # @torch.no_grad()
-    # def _compute_triple_delta(self, alpha=0.01, beta=0.1):
-    #     eps = 1e-6
-    #     mod = self.label_hist / (self.label_hist.mean() + eps)
-    #     delta_dynamic = (self.time_p * mod)
-
-    #     delta_tilde = self.confusion_matrix.T @ delta_dynamic
-    #     delta_tilde = delta_tilde / (delta_tilde.mean() + eps)
-    #     if self.train_step < 500:
-
-    #         mod_corrected = delta_tilde
-    #     else:
-    #         mod_corrected = delta_dynamic
-
-    #     scatter_norm = self.compute_scatter()
-    #     structural = scatter_norm 
-    #     structural = structural / (structural.mean() + eps)
-    #     structural = structural ** beta
-
-    #     delta = mod_corrected * structural
-
-    #     return delta
-
-    # def _compute_triple_delta(self, alpha=0.01, beta=0.1):
-    #     eps = 1e-6
-    #     mod = self.label_hist / (self.label_hist.mean() + eps)
-    #     static = self.delta_pre ** alpha
-    #     scatter_norm = self.compute_scatter()
-
-    #     # sem_norm = self.compute_semantic_confusion()
-    #     # structural = (scatter_norm / (sem_norm + eps))
-    #     # structural = structural / (structural.mean() + eps)
-    #     # structural = scatter_norm / (scatter_norm.mean() + eps)
-    #     structural = scatter_norm ** beta
-    #     delta = self.time_p * mod * structural
-    #     # delta = self.time_p * mod * structural
-    #     return delta
-
-    
-    '''
-    @torch.no_grad()
-    def _compute_triple_delta(self, alpha=0.01, beta=0.1):
-        eps = 1e-6
-        mod = self.label_hist / (self.label_hist.mean() + eps)       # (C,)
-        scatter_norm = self.compute_scatter(conf_threshold=0.7)      # (C,)
-        bias_score = mod * (scatter_norm**beta)   
-        # bias_score = bias_score / (bias_score.mean() + eps)
-        delta = self.time_p * bias_score 
-        return delta
-    '''
     @torch.no_grad()
     def update_confusion_matrix(self, unlabeled_probs):
         eps = 1e-6
@@ -1240,31 +1102,7 @@ class Model(nn.Module):
             )
 
         return d_j
-    # @torch.no_grad()
-    # def masking(self, logits_x_ulb, softmax_x_ulb=True, factor=True):
-    #     if softmax_x_ulb:
-    #         probs_x_ulb = torch.softmax(logits_x_ulb.detach(), dim=-1)
-    #     else:
-    #         probs_x_ulb = logits_x_ulb.detach()
-
-    #     self.update(probs_x_ulb)
-
-    #     max_probs, max_idx = probs_x_ulb.max(dim=-1)
-    #     if self.static_bias_ready:
-    #         delta = self._compute_dual_source_delta()
-    #     else:
-            
-    #         # mod = self.p_model / torch.max(self.p_model, dim=-1)[0]
-    #         mod = self.label_hist / self.label_hist.mean()
-    #         # mod = self.label_hist / torch.max(self.label_hist, dim=-1)[0]
-    #         delta =  self.time_p * mod
-    #     bias = delta 
-    #     mask = max_probs.ge(delta[max_idx]).to(max_probs.dtype)
-    #     if factor:
-    #         logit_adjust = torch.log(delta + 1e-6)
-    #         return bias, logit_adjust
-    #     else:
-    #         return mask
+    
 
     def forward(self, image):
         feat = self.image_encoder(image, self.tuner)
